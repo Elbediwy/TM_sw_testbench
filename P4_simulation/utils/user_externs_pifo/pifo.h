@@ -48,7 +48,6 @@ void init() override {  // Attributes
 		unsigned int pred;
 		unsigned int pkt_ptr;
 		std::vector<unsigned int> levels_ranks;
-		unsigned int arrival_time;
 	};
 // The flow scheduler struct : which is a queue that sorts 1 head packet from each flow.
 	struct flow_scheduler {
@@ -74,7 +73,6 @@ void init() override {  // Attributes
 
 	static std::vector<std::shared_ptr<fifo_bank>> FB; // the fifo bank queues, each flow scheduler has its own FIFO bank which stores the rest of packets of the flow handled in this flow scheduler.
 
-	static std::vector<unsigned int> new_ranks_each_level;
 // level 2 of the hierarchy variables
 
 // level 1 of the hierarchy variables (root)
@@ -89,18 +87,11 @@ void init() override {  // Attributes
 
 	static unsigned int switch_is_ready; 
 
-	static unsigned int number_levels;
-
 // these variables will contain the inputs that will be inserted by the user, to be used later. 
 	unsigned int flow_id;
-	//std::vector<unsigned int> pkt_levels_ranks = std::vector<unsigned int>(number_levels);
 	static std::vector<unsigned int> pkt_levels_ranks;
 
-	std::vector<unsigned int> enq_flow_id_each_level = std::vector<unsigned int>(number_levels);
-
 	unsigned int pred;
-	unsigned int arrival_time;
-	static unsigned int shaping;   //new static
 	unsigned int enq;
 	static unsigned int pkt_ptr;  //new static
 	unsigned int deq;
@@ -114,37 +105,23 @@ void init() override {  // Attributes
 		pkt_levels_ranks.erase(pkt_levels_ranks.begin() + level_id.get<uint32_t>());
 		pkt_levels_ranks.insert(pkt_levels_ranks.begin() + level_id.get<uint32_t>(), rank_value.get<uint32_t>());
 	}
-	void pass_updated_rank_values(const Data& rank_value, const Data& flow_id, const Data& level_id)
-	{
-		new_ranks_each_level.erase(new_ranks_each_level.begin() + flow_id.get<uint32_t>() + (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]*level_id.get<uint32_t>()));
-		new_ranks_each_level.insert(new_ranks_each_level.begin() + flow_id.get<uint32_t>() + (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]*level_id.get<uint32_t>()), rank_value.get<uint32_t>());
-	}
 
-	void my_scheduler(const Data& in_flow_id, const Data& number_of_levels_used, const Data& in_pred, const Data& in_arrival_time, const Data& in_shaping, const Data& in_enq, const Data& in_pkt_ptr, const Data& in_deq, const Data& reset_time)
+	void my_scheduler(const Data& in_flow_id, const Data& idle_time, const Data& in_enq, const Data& in_pkt_ptr, const Data& reset_time)
 	{
 
 // copy the inputs values :: Todo : they should be removed later and just use the inputs directly.
 	
-	if(reset_time.get<uint32_t>() == 1)
-	{
-	time_now = 0;
-	}
-		flow_id = in_flow_id.get<uint32_t>();
-
-		// pkt_levels_ranks contains the ranks of this packet at each level, levels_ranks[number_levels] for the root, and levels_ranks[0] for the leaves
-		for (int i = number_of_levels_used.get<int>(); i < int(number_levels); i++)
+		if(reset_time.get<uint32_t>() == 1)
 		{
-			pkt_levels_ranks.erase(pkt_levels_ranks.begin() + i);
-			pkt_levels_ranks.insert(pkt_levels_ranks.begin() + i, pkt_levels_ranks[number_of_levels_used.get<int>()-1]);
+			time_now = 0;
 		}
-
-		pred = in_pred.get<uint32_t>();
-		arrival_time = in_arrival_time.get<uint32_t>();
-		shaping = in_shaping.get<uint32_t>();
+		
+		flow_id = in_flow_id.get<uint32_t>();
+		pred = idle_time.get<uint32_t>();
 		enq = in_enq.get<uint32_t>();
 		pkt_ptr = in_pkt_ptr.get<uint32_t>();
 		pkt_ptr_queue.push(pkt_ptr);
-		deq = in_deq.get<uint32_t>();
+		deq = 0;
 
 // the core code of the pifo scheduler, that enqueue, dequeue or force dequeue packets.
 		run_core();
@@ -160,30 +137,16 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		std::shared_ptr<packet> out_deq_pkt_ptr;
 		std::shared_ptr<fifo_bank> head_FB =  NULL;
 		unsigned int queue_id = 0;
-		unsigned int next_flow_id_empty = 0;
 		unsigned int sum_number_all_queues = 0;
-		unsigned int sum_all_update_rank_flows = 0;
 
 		for(int i = 0; i < int(level_id); i++)
 		{
-			if(i ==0)
-			{
-				sum_all_update_rank_flows = (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]);
-			}
-			else
-			{
-				sum_all_update_rank_flows = sum_all_update_rank_flows + number_of_queues_per_level[i-1];
-			}
 			sum_number_all_queues = sum_number_all_queues + number_of_queues_per_level[i];
 
 		}
 		if (level_enq == 1)
 		{	
-			if(level_id < (number_levels - 1))
-			{
-				queue_id = int(level_packet_ptr->flow_id / number_of_pkts_per_queue_each_level[level_id]);
-			}
-		
+
 			if(level_id == 0)
 			{
 				head_FB = FB[queue_id];
@@ -191,14 +154,9 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 
 			head_FS = FS[queue_id + sum_number_all_queues];
 
-			if(level_id !=0)
-			{
-				sum_all_update_rank_flows = sum_all_update_rank_flows + (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]) * (number_levels-1);
-			}
-
-			pifo(level_packet_ptr, shaping, level_enq, level_deq, \
+			pifo(level_packet_ptr, level_enq, level_deq, \
 			head_FS, head_FB, \
-			time_now, out_deq_pkt_ptr,next_flow_id_empty);
+			time_now, out_deq_pkt_ptr);
 
 			FS[queue_id + sum_number_all_queues] = head_FS;
 			if(level_id == 0)
@@ -208,123 +166,20 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		}
 		else if (level_deq == 1)
 		{
-			if(level_id < (number_levels - 1))
+			if(level_id == 0)
 			{
-				queue_id = level_packet_ptr->flow_id;
-			}
-				if(level_id == 0)
-				{
-					head_FB = FB[queue_id];
-				}
-
-			if(level_id !=0)
-			{
-				sum_all_update_rank_flows = sum_all_update_rank_flows + (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]) * (number_levels-1);
+				head_FB = FB[queue_id];
 			}
 
-			pifo(level_packet_ptr, shaping, level_enq, level_deq, \
+			pifo(level_packet_ptr, level_enq, level_deq, \
 			FS[queue_id + sum_number_all_queues], head_FB, \
-			time_now, out_deq_pkt_ptr,next_flow_id_empty);
+			time_now, out_deq_pkt_ptr);
 
 			level_packet_ptr = out_deq_pkt_ptr;
 		}
 	}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// determine the queues IDs for each packet corresponding to the first and the second level of the hierarchy.
-	void levels_queues_id(unsigned int flow_id)
-	{
-		unsigned int flow_id_at_this_level = int(flow_id/number_of_pkts_per_queue_each_level[0]);
-		enq_flow_id_each_level.erase(enq_flow_id_each_level.begin() + 0);
-		enq_flow_id_each_level.insert(enq_flow_id_each_level.begin() + 0, flow_id_at_this_level);
-		for(int i = 1; i < int(number_levels); i++)
-		{
-			enq_flow_id_each_level.erase(enq_flow_id_each_level.begin() + i);
-			enq_flow_id_each_level.insert(enq_flow_id_each_level.begin() + i, flow_id_at_this_level);
-			flow_id_at_this_level = int(flow_id/((number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0])/number_of_queues_per_level[i]));
-		}
-	}
-
-// I used check_levels for dequeue and for "Force dequeue"
-	void check_levels(std::vector<unsigned int>& flow_id_found)
-	{
-		flow_id_found.erase(flow_id_found.begin() + 0);
-		flow_id_found.insert(flow_id_found.begin() + 0, 0);
-		std::shared_ptr<flow_scheduler> cur_ptr_FS;
-		unsigned int sum_number_all_queues = 0;
-		for (int j = 1; j < int(number_levels); j++)
-		{
-			flow_id_found.erase(flow_id_found.begin() + j);
-			flow_id_found.insert(flow_id_found.begin() + j, 0);
-			sum_number_all_queues = sum_number_all_queues + number_of_queues_per_level[j-1];
-			for (int i = 0; i < int(number_of_queues_per_level[j]);i++)
-			{
-				cur_ptr_FS = FS[i + sum_number_all_queues];
-				while (cur_ptr_FS != NULL)
-				{
-					if (cur_ptr_FS->object->flow_id == enq_flow_id_each_level[j]) 
-					{
-						flow_id_found.erase(flow_id_found.begin() + j);
-						flow_id_found.insert(flow_id_found.begin() + j, 1);
-						break;
-					}
-					cur_ptr_FS = cur_ptr_FS->next;
-				}
-				if(flow_id_found[j] == 1)
-				{
-				break;
-				}
-			}
-		}
-	}
-
-	void update_ranks_level_all_levels()
-	{
-		unsigned int sum_number_all_queues = 0;
-		unsigned int sum_all_update_rank_flows = (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0])*(number_levels);
-		unsigned int offset_of_new_ranks_each_level = (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0]);
-
-		for(int i = 0; i < int(number_of_queues_per_level[0]); i++)
-		{	
-			if (FS[i] != NULL)
-			{
-				new_ranks_each_level.erase(new_ranks_each_level.begin() + i + sum_all_update_rank_flows);
-
-				if ((new_ranks_each_level[FS[i]->object->flow_id + offset_of_new_ranks_each_level]!=0))
-				{
-					new_ranks_each_level.insert(new_ranks_each_level.begin() + i + sum_all_update_rank_flows, new_ranks_each_level[FS[i]->object->flow_id + offset_of_new_ranks_each_level]);
-				}			
-				else
-				{
-					new_ranks_each_level.insert(new_ranks_each_level.begin() + i + sum_all_update_rank_flows, FS[i]->object->rank);
-				}
-			}
-		}
-
-		for(int j = 2; j < int(number_levels); j++)
-		{
-			sum_number_all_queues = sum_number_all_queues + number_of_queues_per_level[j-2];
-			sum_all_update_rank_flows = sum_all_update_rank_flows + number_of_queues_per_level[j-2];  
-			unsigned int offset_of_new_ranks_each_level = (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0])*(j-1);
-			for(int i = 0; i < int(number_of_queues_per_level[j-1]); i++)
-			{	
-				if (FS[i + sum_number_all_queues] != NULL)
-				{
-					new_ranks_each_level.erase(new_ranks_each_level.begin() + i + sum_all_update_rank_flows);
-
-					if ((new_ranks_each_level[FS[i + sum_number_all_queues]->object->level3_flow_id + offset_of_new_ranks_each_level]!=0))
-					{
-						new_ranks_each_level.insert(new_ranks_each_level.begin() + i + sum_all_update_rank_flows, new_ranks_each_level[FS[i + sum_number_all_queues]->object->level3_flow_id + offset_of_new_ranks_each_level]);					
-					}				
-					else
-					{
-						new_ranks_each_level.insert(new_ranks_each_level.begin() + i + sum_all_update_rank_flows, FS[i + sum_number_all_queues]->object->rank);
-					}
-				}
-			}
-		}
-	}
 
 // the core function of the pifo scheduler, applies enqueue and dequeue operations, to & from each level of the hirarchy, 
 //and each level is responsible of enqueue and dequeue in each queue inside this level 
@@ -337,7 +192,9 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 
 			if(start_time == 0)
 			{
-				start_time = std::time(0);
+				//start_time = std::time(0);
+				start_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
 			}
 
 			number_of_enqueue_packets = number_of_enqueue_packets + 1;
@@ -349,34 +206,17 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 			enq_packet_ptr->pred = pred;
 			enq_packet_ptr->pkt_ptr = pkt_ptr;
 			enq_packet_ptr->levels_ranks = pkt_levels_ranks;
-			enq_packet_ptr->arrival_time = arrival_time;
 
 
-			levels_queues_id(flow_id);
-			std::vector<unsigned int> flow_id_found_all_levels = std::vector<unsigned int>(number_levels);
-			check_levels(flow_id_found_all_levels);
-			// levels_ranks should be the updated flows ranks
-			
-			unsigned int enq_level_id = 0;
-			for(int i = number_levels - 1; i > 0; i--)
-			{
-				if (flow_id_found_all_levels[i] == 0)
-				{
-					enq_packet_ptr->rank = pkt_levels_ranks[i];
-					enq_packet_ptr->flow_id = enq_flow_id_each_level[i];
-					enq_level_id = i;
-					break;
-				}
-			}
-
-			level_controller(enq_packet_ptr, enq, 0, enq_level_id);
+			level_controller(enq_packet_ptr, enq, 0, 0);
 
 		}
 
 		if ((deq == 1)&&(switch_is_ready == 1))
 		{
-			last_time = std::time(0);
-			
+			//last_time = std::time(0);
+			last_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
 			if(last_time > start_time)
 			{
 				time_now = last_time - start_time;
@@ -386,67 +226,23 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 				time_now = 0;
 			}
 
-			if(number_levels > 1)
-			{
-				update_ranks_level_all_levels();
-			}
-
-			std::this_thread::sleep_for(std::chrono::microseconds(810));  // equivalent to 1ms (with adding the overhead of the code)
+			//std::this_thread::sleep_for(std::chrono::microseconds(810));  // equivalent to 1ms (with adding the overhead of the code)
+			std::this_thread::sleep_for(std::chrono::microseconds(10));  // equivalent to 1ms (with adding the overhead of the code)
 
 			deq_packet_ptr = std::shared_ptr<packet>(std::make_shared<packet>());
 
-			level_controller(deq_packet_ptr, 0, deq, number_levels - 1);
+			level_controller(deq_packet_ptr, 0, deq, 0);
 			std::shared_ptr<packet> intermediate_pkt_ptr = std::shared_ptr<packet>(std::make_shared<packet>());
-			if(deq_packet_ptr != NULL)
-			{
-			unsigned int prev_level_dequeued_flow_id = deq_packet_ptr->flow_id;
-				for(int i = number_levels - 2; i >= 0; i--)
-				{
-					intermediate_pkt_ptr->flow_id = prev_level_dequeued_flow_id;
-					level_controller(intermediate_pkt_ptr, 0, deq, i);
-					if ((intermediate_pkt_ptr == NULL)&&(shaping))
-					{
-						unsigned int original_shaping_value = shaping;
-						shaping = 0;
-						intermediate_pkt_ptr = std::shared_ptr<packet>(std::make_shared<packet>());
-						intermediate_pkt_ptr->flow_id = prev_level_dequeued_flow_id;
-						level_controller(intermediate_pkt_ptr, 0, deq, i);
-						shaping = original_shaping_value;
-					}
-					if(intermediate_pkt_ptr != NULL)
-					{
-						unsigned int last_dequeued_pkt_flow_id = intermediate_pkt_ptr->flow_id;
-						intermediate_pkt_ptr->flow_id = prev_level_dequeued_flow_id;
-						prev_level_dequeued_flow_id = last_dequeued_pkt_flow_id;
-						unsigned int offset_of_new_ranks_each_level = (number_of_pkts_per_queue_each_level[0]*number_of_queues_per_level[0])*(i);
-						if ((new_ranks_each_level[intermediate_pkt_ptr->level3_flow_id + offset_of_new_ranks_each_level]!=0))
-						{
-							intermediate_pkt_ptr->rank = new_ranks_each_level[intermediate_pkt_ptr->level3_flow_id + offset_of_new_ranks_each_level];
-						}
-						else
-						{
-							intermediate_pkt_ptr->rank = intermediate_pkt_ptr->levels_ranks[i+1];
-						}
-						level_controller(intermediate_pkt_ptr, 1, 0, i+1);
-					}
-					else
-					{
-						break;
-					}
-				}
-			}
-
 		}	
 	}
 
 
 // This is the pifo queue function which handles 1 flow_scheduler and 1 FIFO at a time, this function is used by each level function
-	void pifo(std::shared_ptr<pifo_scheduler::packet> pkt_ptr, unsigned int in_shaping, unsigned int in_enq, unsigned int in_deq, std::shared_ptr<pifo_scheduler::flow_scheduler>& in_head_FS, std::shared_ptr<pifo_scheduler::fifo_bank>& in_head_FB, \
-		unsigned int in_time_now, std::shared_ptr<packet>& out_deq_pkt_ptr, unsigned int& next_flow_id_empty)
+	void pifo(std::shared_ptr<pifo_scheduler::packet> pkt_ptr, unsigned int in_enq, unsigned int in_deq, std::shared_ptr<pifo_scheduler::flow_scheduler>& in_head_FS, std::shared_ptr<pifo_scheduler::fifo_bank>& in_head_FB, \
+		unsigned int in_time_now, std::shared_ptr<packet>& out_deq_pkt_ptr)
 	{
 		std::shared_ptr<pifo_scheduler::packet> deq_packet_ptr = NULL;
 		std::shared_ptr<pifo_scheduler::flow_scheduler> cur_ptr_FS;
-		next_flow_id_empty = 0;
 
 // in case of enqueue (enq ==1), a packet will be enqueued to flow scheduler first enqueue_FS (if its flow already existed there), it will be enqueued in the FIFO bank instead.
 // in case of dequeue (deq ==1), a packet will be dequeued from the flow scheduler dequeue_FS, then the next packet from the same flow will be dequeued from the FIFO bank dequeue_FB,
@@ -464,7 +260,7 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		}
 		if (in_deq == 1)
 		{			
-			dequeue_FS(deq_packet_ptr, in_shaping, in_head_FS, in_time_now);
+			dequeue_FS(deq_packet_ptr, in_head_FS, in_time_now);
 
 			if (deq_packet_ptr != NULL)
 			{
@@ -506,7 +302,7 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 			temp_ptr->object = new_packet_ptr;
 			while ((cur_ptr_FS != NULL))
 			{
-				if((cur_ptr_FS->object->rank < new_packet_ptr->rank)||((cur_ptr_FS->object->rank == new_packet_ptr->rank)&&(cur_ptr_FS->object->arrival_time < new_packet_ptr->arrival_time)))
+				if(cur_ptr_FS->object->rank < new_packet_ptr->rank)
 				{
 				prev_ptr_FS = cur_ptr_FS;
 				cur_ptr_FS = cur_ptr_FS->next;
@@ -581,14 +377,14 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 
 	}
 
-	void dequeue_FS(std::shared_ptr<pifo_scheduler::packet>& deq_packet_ptr, unsigned int in_shaping, std::shared_ptr<pifo_scheduler::flow_scheduler>& head_FS, unsigned int time_now)
+	void dequeue_FS(std::shared_ptr<pifo_scheduler::packet>& deq_packet_ptr, std::shared_ptr<pifo_scheduler::flow_scheduler>& head_FS, unsigned int time_now)
 	{
 		std::shared_ptr<pifo_scheduler::flow_scheduler> cur_ptr_FS;
 		cur_ptr_FS = std::shared_ptr<pifo_scheduler::flow_scheduler>(std::make_shared<pifo_scheduler::flow_scheduler>());
 		std::shared_ptr<pifo_scheduler::flow_scheduler> prev_ptr_FS;
 		prev_ptr_FS = std::shared_ptr<pifo_scheduler::flow_scheduler>(std::make_shared<pifo_scheduler::flow_scheduler>());
 		deq_packet_ptr = NULL;
-		if ((in_shaping == 1) && (head_FS != NULL))
+		if (head_FS != NULL)
 		{
 			cur_ptr_FS = head_FS;
 			prev_ptr_FS = NULL;
@@ -610,14 +406,6 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 					prev_ptr_FS = cur_ptr_FS;
 					cur_ptr_FS = cur_ptr_FS->next;
 				}
-			}
-		}
-		else
-		{
-			if ((head_FS != NULL) && (head_FS->object->pkt_ptr <= number_of_read_packets)) // Elbediwy : I add this, to synchronize with the switch multithreading
-			{
-				deq_packet_ptr = head_FS->object;
-				head_FS = head_FS->next;
 			}
 		}
 	}
