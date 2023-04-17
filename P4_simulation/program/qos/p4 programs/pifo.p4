@@ -4,9 +4,8 @@
 
 extern pifo_scheduler<T1,T2> {
     pifo_scheduler(bit<1> verbose); 
-void my_scheduler(in T1 in_flow_id, in T1 number_of_levels_used, in T1 in_pred, in T1 in_arrival_time, in T2 in_shaping, in T2 in_enq, in T1 in_pkt_ptr, in T2 in_deq, in T2 reset_time);
+void my_scheduler(in T1 in_flow_id, in T1 idle_time, in T2 in_enq, in T1 in_pkt_ptr, in T2 reset_time);
 void pass_rank_values ( in T1 rank_value, in T1 level_id);
-void pass_updated_rank_values ( in T1 rank_value, in T1 flow_id, in T1 level_id);
 }
 
 const bit<16> TYPE_IPV4 = 0x800;
@@ -131,23 +130,14 @@ control MyIngress(inout headers hdr,
     @userextern @name("my_pifo")
     pifo_scheduler<bit<48>,bit<1>>(1) my_pifo;
 
-    bit <48> level_3_rank;
-    bit <48> in_pred= 15;
+    bit <48> rank;
+    bit <48> in_idle_time = 15000;
     bit <48> in_pkt_ptr;
-    bit <48> new_rank_flow_id=0;
-    bit <48> flow_new_rank=0;
-    bit <48> out_pkt_ptr=0;
-    bit <48> number_of_levels_used = 1;
-
-    bit <1> in_shaping = 1;
     bit <1> in_enq = 1;
-    bit <1> in_deq = 0;
-    bit <1> update_flow_rank = 0;
     bit <1> reset_time = 0;
+    bit <48> in_flow_id = 0;
 
     register<bit<48>>(1) register_last_ptr;
-    register<bit<48>>(1024) flows_min_rank;
-    bit <48> in_flow_id = 0;
 
     action assign_flow_id(bit <48> flow_id) {
         in_flow_id = flow_id;
@@ -175,27 +165,11 @@ control MyIngress(inout headers hdr,
         in_pkt_ptr = in_pkt_ptr + (bit<48>)(1);
         register_last_ptr.write(0,in_pkt_ptr);
 
-        flows_min_rank.read(level_3_rank,(bit<32>)in_flow_id);
-
-    if((level_3_rank == 0)||((bit<48>)(hdr.ipv4.options) < level_3_rank))
-    {
-        level_3_rank = (bit<48>)(hdr.ipv4.options);
-        new_rank_flow_id = in_flow_id;
-        flow_new_rank = level_3_rank;
-        update_flow_rank = 1;
-        flows_min_rank.write((bit<32>)in_flow_id,level_3_rank);
-    }
-    
+        rank = (bit<48>)(hdr.ipv4.options);    
 
         reset_time = 0;
 
-    my_pifo.pass_rank_values(level_3_rank,0);
-    
-    if(update_flow_rank == 1)
-    {
-        my_pifo.pass_updated_rank_values(flow_new_rank,new_rank_flow_id,0);
-    }
-
+        my_pifo.pass_rank_values(rank,0);
 
         if(hdr.ipv4.dstAddr == 0)
         {
@@ -203,7 +177,7 @@ control MyIngress(inout headers hdr,
         }
         else
         {
-            my_pifo.my_scheduler(in_flow_id, number_of_levels_used, in_pred, in_pkt_ptr, in_shaping, in_enq, in_pkt_ptr, in_deq, reset_time);
+            my_pifo.my_scheduler(in_flow_id, in_idle_time, in_enq, in_pkt_ptr, reset_time);
         }
         
         if (hdr.ipv4.isValid()) {   
