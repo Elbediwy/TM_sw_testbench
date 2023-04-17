@@ -119,10 +119,16 @@ class P4RuntimeSwitch(P4Switch):
             args.append("--log-console")
         if self.thrift_port:
             args.append('--thrift-port ' + str(self.thrift_port))
-        args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_dr_pifo/DR_PIFO.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_dr_pifo/DR_PIFO.so ")
         #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_pFabric/pFabric.so ")
-        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_pifo/pifo.so ")
+        args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_pifo/pifo.so ")
         #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_pieo/pieo.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_hier/hier.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_hier2/hier.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_hier3/hier.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_hier4/hier.so ")
+        #args.append("-- --load-modules=/home/vagrant/dr_pifo_simulation/utils/user_externs_hier5/hier.so ")
+
         if self.grpc_port:
             args.append("--grpc-server-addr 0.0.0.0:" + str(self.grpc_port))
         cmd = ' '.join(args)
