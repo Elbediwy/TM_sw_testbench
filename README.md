@@ -9,7 +9,7 @@ Optional : you can find these tools installed in the provided VM from https://gi
 3. Copy the files provided in "P4_simulation/BMv2 Files/" to the directory of the simple_switch in your system "behavioral-model/targets/simple_switch" (replace the already existed files, if needed)
 
 4. In "behavioral-model/targets/simple_switch/simple_switch.cpp", for the lines from 42-45, include only the model of the packet scheduler that you would like to test.
-https://github.com/Elbediwy/TM_sw_testbench/blob/b2b9a5de856eb6e7377526d46c4310487606b6f5/P4_simulation/BMv2%20files/simple_switch.cpp#L44
+https://github.com/Elbediwy/TM_sw_testbench/blob/ccd7f2e23deb2292d8061536496269ead6c1a79c/P4_simulation/BMv2%20files/simple_switch.cpp#L44
 
 For example, if you uncommented only "#include "TM_buffer_pifo.h"", so you will use the PIFO packet scheduler model in the BMv2 model. 
 
@@ -34,7 +34,7 @@ sudo make
 ```
 
 7. For the PIFO, in the "P4_simulation/utils/user_externs_pifo/p4runtime_switch.py", uncomment the line refers to the folder "user_externs_pifo"
-https://github.com/Elbediwy/TM_sw_testbench/blob/b2b9a5de856eb6e7377526d46c4310487606b6f5/P4_simulation/utils/p4runtime_switch.py#L124
+https://github.com/Elbediwy/TM_sw_testbench/blob/8e9b9b9f9818d3ac7c52da9c2ba3b3712bd9c9a8/P4_simulation/utils/p4runtime_switch.py#L124
 
 8. For the PIFO, copy the content of the file "P4_simulation/utils/program/qos/p4 programs/PIFO.p4" to this file "P4_simulation/utils/program/qos/qos.p4"
 
