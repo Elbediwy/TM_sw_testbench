@@ -39,10 +39,15 @@
 #include "register_access.h"
 #include "semaphore_TM.h"
 
-#include "TM_buffer_dr_pifo.h"
+//#include "TM_buffer_dr_pifo.h"
 //#include "TM_buffer_pFabric.h"
-//#include "TM_buffer_pifo.h"
+#include "TM_buffer_pifo.h"
 //#include "TM_buffer_pieo.h"
+//#include "TM_buffer_hier.h"
+//#include "TM_buffer_hier2.h"
+//#include "TM_buffer_hier3.h"
+//#include "TM_buffer_hier4.h"
+//#include "TM_buffer_hier5.h"
 
 std::shared_ptr<TM_buffer::buffer> TM_buffer::buffer_head = NULL; // added line
 
