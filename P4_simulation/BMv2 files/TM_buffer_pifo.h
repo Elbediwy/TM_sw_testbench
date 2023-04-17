@@ -26,21 +26,14 @@ std::vector<std::shared_ptr<bm::pifo_scheduler::flow_scheduler>> bm::pifo_schedu
 std::vector<std::shared_ptr<bm::pifo_scheduler::fifo_bank>> bm::pifo_scheduler::FB = { NULL};
 
 unsigned int bm::pifo_scheduler::time_now = 0;
-unsigned int bm::pifo_scheduler::number_levels = 1;
 
 std::vector<unsigned int> bm::pifo_scheduler::number_of_queues_per_level = {1};
 std::vector<unsigned int> bm::pifo_scheduler::number_of_pkts_per_queue_each_level = {1000};
 
-unsigned int sum_all_queues = bm::pifo_scheduler::number_of_queues_per_level[0];
-
-unsigned int number_of_update_ranks_all_level = (bm::pifo_scheduler::number_of_pkts_per_queue_each_level[0]*bm::pifo_scheduler::number_of_queues_per_level[0] * bm::pifo_scheduler::number_levels);
-
-std::vector<unsigned int> bm::pifo_scheduler::new_ranks_each_level(number_of_update_ranks_all_level);
 
 std::queue<unsigned int> bm::pifo_scheduler::pkt_ptr_queue;
 
 unsigned int bm::pifo_scheduler::pkt_ptr = 0;
-unsigned int bm::pifo_scheduler::shaping = 0;
 unsigned int bm::pifo_scheduler::number_of_enqueue_packets = 0;
 unsigned int bm::pifo_scheduler::number_of_read_packets = 0;
 unsigned int bm::pifo_scheduler::number_of_dequeue_packets = 0;
