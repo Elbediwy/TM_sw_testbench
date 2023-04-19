@@ -1,7 +1,6 @@
-
-//////////////////////////////////////////////////// todo list
-//////////////////////////////////////////////////// 1) force dequeue and error correction are not unsigned short introduced properly yet.
-//////////////////////////////////////////////////// 2) add the arrival time in each packet (I am using the pkt_ptr instead in the enqueue_FS now)
+// author : Mostafa Elbediwy
+// This code contains the core of the Traffic Manager (PIFO), it defines the enqueue and dequeue functons to be used by the target switch.
+// a PIFO function is used in this class, to replace the PIFO with a new TM, one can replace the PIFO function with the new TM's function.
 
 #ifndef SIMPLE_SWITCH_PSA_DIV_H_
 #define SIMPLE_SWITCH_PSA_DIV_H_
@@ -25,9 +24,6 @@ using namespace std::chrono;
 
 namespace bm {
 
-// if the rank = 0, that means this level is not used (pkts will be handled in a FIFO order in this level), the lowest rank in any level is "1".
-
-// this is the main class of the pifo scheduler that will be used later in any usage of the scheduler.
 class pifo_scheduler : public bm::ExternType {
  public:
   BM_EXTERN_ATTRIBUTES {
@@ -54,7 +50,8 @@ void init() override {  // Attributes
 		std::shared_ptr<packet> object;
 		std::shared_ptr<flow_scheduler> next;
 	};
-// The Fifo bank struct : which consists of multiple FIFO queues, each one is dedicated to one flow, and stores all packets from this flow except the head packet.
+// The Fifo bank struct : which consists of multiple FIFO queues, 
+// each one is dedicated to one flow, and stores all packets from this flow except the head packet.
 	struct fifo_bank {
 		unsigned int flow_id;
 		std::shared_ptr<packet> object;
@@ -62,21 +59,14 @@ void init() override {  // Attributes
 		std::shared_ptr<fifo_bank> left;
 	};
 
-	static unsigned int time_now; // the current time, increment by 1 each time we call the scheduler for a dequeue (which is continous)
-
-// level 3 of the hierarchy variables
-	static std::vector<unsigned int> number_of_queues_per_level;
+	static unsigned int time_now; // the current time from the launch of the switch (milliseconds).
+	static std::vector<unsigned int> number_of_queues_per_level; // 1 for a single PIFO queue
 	static std::vector<unsigned int> number_of_pkts_per_queue_each_level;
 
 
 	static std::vector<std::shared_ptr<flow_scheduler>> FS; 
 
-	static std::vector<std::shared_ptr<fifo_bank>> FB; // the fifo bank queues, each flow scheduler has its own FIFO bank which stores the rest of packets of the flow handled in this flow scheduler.
-
-// level 2 of the hierarchy variables
-
-// level 1 of the hierarchy variables (root)
-	 
+	static std::vector<std::shared_ptr<fifo_bank>> FB; 	 
 
 	std::shared_ptr<packet> deq_packet_ptr = NULL; // the pointer to the dequeued packet
 	static unsigned int number_of_enqueue_packets; // the total number of enqueued packets until now.
@@ -90,47 +80,43 @@ void init() override {  // Attributes
 // these variables will contain the inputs that will be inserted by the user, to be used later. 
 	unsigned int flow_id;
 	static std::vector<unsigned int> pkt_levels_ranks;
-
 	unsigned int pred;
 	unsigned int enq;
-	static unsigned int pkt_ptr;  //new static
+	static unsigned int pkt_ptr;
 	unsigned int deq;
 	static std::queue<unsigned int> pkt_ptr_queue;
 
-	static int start_time; 
-	static int last_time; 
+	static int start_time; // the time of the first enqueue to the switch
+	static int last_time;  // the time now.
 
-	void pass_rank_values(const Data& rank_value, const Data& level_id)
+	void pass_rank_values(const Data& rank_value, const Data& level_id) // to be used by the P4 programmer to pass the rank value
 	{
 		pkt_levels_ranks.erase(pkt_levels_ranks.begin() + level_id.get<uint32_t>());
 		pkt_levels_ranks.insert(pkt_levels_ranks.begin() + level_id.get<uint32_t>(), rank_value.get<uint32_t>());
 	}
 
+	// to be used by the P4 programmer to pass the packet's info
 	void my_scheduler(const Data& in_flow_id, const Data& idle_time, const Data& in_enq, const Data& in_pkt_ptr, const Data& reset_time)
 	{
 
-// copy the inputs values :: Todo : they should be removed later and just use the inputs directly.
-	
+// copy the inputs values :: Todo : they should be removed later and just use the inputs directly.	
 		if(reset_time.get<uint32_t>() == 1)
 		{
 			time_now = 0;
 		}
 		
 		flow_id = in_flow_id.get<uint32_t>();
-		pred = idle_time.get<uint32_t>();
+		pred = idle_time.get<uint32_t>(); // the packet is not eligible to be sent before this time
 		enq = in_enq.get<uint32_t>();
-		pkt_ptr = in_pkt_ptr.get<uint32_t>();
-		pkt_ptr_queue.push(pkt_ptr);
+		pkt_ptr = in_pkt_ptr.get<uint32_t>(); // pkt pointer in the switch (counter in this experiment)
+		pkt_ptr_queue.push(pkt_ptr); // to avoid losing packets if the receving rate is faster than the enqueuing rate.
 		deq = 0;
 
-// the core code of the pifo scheduler, that enqueue, dequeue or force dequeue packets.
+// the core code that enqueue and dequeue packets.
 		run_core();
 	}
 
-// the function for enqueue/dequeue to/from the third level of the hierarchy.
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+// the function for enqueue/dequeue to/from a level of queues (to be used by the run_core().
 void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int level_enq, unsigned int level_deq, unsigned int level_id)
 	{
 		std::shared_ptr<flow_scheduler> head_FS = NULL;
@@ -154,6 +140,7 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 
 			head_FS = FS[queue_id + sum_number_all_queues];
 
+			// the PIFO main function (should be changed to implement a new TM)
 			pifo(level_packet_ptr, level_enq, level_deq, \
 			head_FS, head_FB, \
 			time_now, out_deq_pkt_ptr);
@@ -171,6 +158,7 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 				head_FB = FB[queue_id];
 			}
 
+			// the PIFO main function (should be changed to implement a new TM)
 			pifo(level_packet_ptr, level_enq, level_deq, \
 			FS[queue_id + sum_number_all_queues], head_FB, \
 			time_now, out_deq_pkt_ptr);
@@ -179,10 +167,7 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		}
 	}
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// the core function of the pifo scheduler, applies enqueue and dequeue operations, to & from each level of the hirarchy, 
-//and each level is responsible of enqueue and dequeue in each queue inside this level 
+// the core function of the pifo scheduler, applies enqueue and dequeue operations using the level_controller() function
 	void run_core()
 	{
 		deq_packet_ptr = NULL;
@@ -227,9 +212,12 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 			}
 
 			//std::this_thread::sleep_for(std::chrono::microseconds(810));  // equivalent to 1ms (with adding the overhead of the code)
-			std::this_thread::sleep_for(std::chrono::microseconds(10));  // equivalent to 1ms (with adding the overhead of the code)
+			
+			// the smallest number that the target switch (in our CPU) can recognize. 
+			// We believe that, with a more powerful CPU, this number can be reduced.
+			std::this_thread::sleep_for(std::chrono::microseconds(10)); 
 
-			deq_packet_ptr = std::shared_ptr<packet>(std::make_shared<packet>());
+			deq_packet_ptr = std::shared_ptr<packet>(std::make_shared<packet>()); // the dequeued packet to be sent to the egress pipeline.
 
 			level_controller(deq_packet_ptr, 0, deq, 0);
 			std::shared_ptr<packet> intermediate_pkt_ptr = std::shared_ptr<packet>(std::make_shared<packet>());
@@ -244,7 +232,8 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		std::shared_ptr<pifo_scheduler::packet> deq_packet_ptr = NULL;
 		std::shared_ptr<pifo_scheduler::flow_scheduler> cur_ptr_FS;
 
-// in case of enqueue (enq ==1), a packet will be enqueued to flow scheduler first enqueue_FS (if its flow already existed there), it will be enqueued in the FIFO bank instead.
+// in case of enqueue (enq ==1), a packet will be enqueued to flow scheduler first enqueue_FS, and it will be enqueued in the FIFO bank instead.
+// this enqueue behavior is adopted because we are trying to implement the proposed PIFO tree to approximately express pFabric, (check the PIFO paper)
 // in case of dequeue (deq ==1), a packet will be dequeued from the flow scheduler dequeue_FS, then the next packet from the same flow will be dequeued from the FIFO bank dequeue_FB,
 // then enqueue this next packet to the flow scheduler enqueue_FS.
 		if (in_enq == 1)
@@ -376,7 +365,8 @@ void level_controller(std::shared_ptr<packet>& level_packet_ptr, unsigned int le
 		}
 
 	}
-
+	
+// used by pifo function to dequeue from a certain Flow Scheduler
 	void dequeue_FS(std::shared_ptr<pifo_scheduler::packet>& deq_packet_ptr, std::shared_ptr<pifo_scheduler::flow_scheduler>& head_FS, unsigned int time_now)
 	{
 		std::shared_ptr<pifo_scheduler::flow_scheduler> cur_ptr_FS;
